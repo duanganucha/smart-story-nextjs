@@ -1,0 +1,25 @@
+# ===== dependencies / build =====
+node_modules
+.next
+/dist
+
+# ===== env / secrets (NEVER commit) =====
+.env
+.env.local
+.env.production
+.env*.local
+# keep templates:
+!.env.production.example
+
+# ===== large media (served from public/, kept OUT of the code repo) =====
+public/audio/
+public/scenes/
+public/public/
+public/images/
+
+# ===== database dumps =====
+*.sql
+
+# ===== misc =====
+.DS_Store
+*.log

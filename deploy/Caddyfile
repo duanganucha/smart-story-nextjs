@@ -1,0 +1,30 @@
+# Caddy reverse proxy — automatic HTTPS (Let's Encrypt) in front of the
+# PM2/Next.js backend on port 3100.
+#
+# 1. Point your domain's A record at the Windows server's public IP.
+# 2. Open inbound TCP 80 + 443 on the server firewall and the router.
+# 3. Replace api.bearrytales.com with your real domain.
+# 4. Run Caddy as a Windows service:
+#       caddy run --config Caddyfile          (foreground test)
+#       # or install as a service with nssm / caddy-service
+#
+# Caddy obtains + renews the TLS certificate automatically — no manual certs.
+
+api.bearrytales.com {
+    encode gzip zstd
+
+    # Serve story audio/images and all Next.js routes from the app.
+    reverse_proxy 127.0.0.1:3100 {
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Host {host}
+    }
+
+    # Larger uploads (image generation API) — match next.config bodySizeLimit.
+    request_body {
+        max_size 20MB
+    }
+
+    log {
+        output file C:/caddy/logs/smartstory.log
+    }
+}
