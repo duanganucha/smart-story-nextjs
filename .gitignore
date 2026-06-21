@@ -23,3 +23,4 @@ public/images/
 # ===== misc =====
 .DS_Store
 *.log
+dist.zip
