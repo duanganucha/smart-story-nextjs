@@ -15,19 +15,27 @@ export async function GET(req) {
   const params = userId ? [Number(userId)] : [];
   const viewerIdNum = viewerId ? Number(viewerId) : null;
 
+  // student_name is a child's real name (PII). Return it ONLY on the viewer's
+  // own stories; everyone else sees the generic label. The list is public
+  // (no REQUIRE_TOKEN yet), so without this every child's name is world-readable.
+  // error may carry internal command lines / filesystem paths — never expose it
+  // on the public list; the owner sees a generic flag instead.
   const [rows] = await pool.query(
     `SELECT s.id, s.user_id, u.name AS owner_name, u.avatar_url AS owner_avatar,
-            s.student_name, s.story_type, s.category, s.language, s.paragraphs, s.voice_speed, s.voice_gender, s.aspect_ratio, s.age_range,
+            IF(? IS NOT NULL AND s.user_id = ?, s.student_name, 'นักเรียน') AS student_name,
+            s.story_type, s.category, s.language, s.paragraphs, s.voice_speed, s.voice_gender, s.aspect_ratio, s.age_range,
             s.source_type, s.engine_story, s.engine_tts, s.engine_image, s.topic,
             s.image_description, s.title, s.story, s.moral, s.scenes, s.audio_path, s.image_path,
-            s.status, s.stage, s.error, s.rating, s.views, s.created_at, s.updated_at,
+            s.status, s.stage,
+            IF(s.error IS NULL, NULL, 'error') AS error,
+            s.rating, s.views, s.created_at, s.updated_at,
             s.loves,
             IF(sl.user_id IS NOT NULL, 1, 0) AS is_loved
      FROM stories s
      LEFT JOIN users u ON u.id = s.user_id
      LEFT JOIN story_loves sl ON sl.story_id = s.id AND sl.user_id = ?
      ${where} ORDER BY s.id DESC LIMIT 200`,
-    [viewerIdNum, ...params]
+    [viewerIdNum, viewerIdNum, viewerIdNum, ...params]
   );
   return NextResponse.json(rows);
 }
