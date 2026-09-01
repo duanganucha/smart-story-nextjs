@@ -127,6 +127,23 @@ export async function POST(req) {
                     publishAt: at.toISOString() };
   }
   const files = meta.files?.[layout];
+
+  // เลือกไฟล์ให้เหมาะกับแพลตฟอร์ม:
+  //   YouTube  รับไฟล์ซับแยกได้ → ใช้ตัวไม่เบิร์น เพื่อให้แปลอัตโนมัติได้ 100+ ภาษา
+  //   Reels/TikTok ไม่รับไฟล์ซับ และคนส่วนใหญ่ดูแบบปิดเสียง → ต้องเบิร์นซับติดภาพ
+  if (files) {
+    const wantBurned = platform !== 'youtube';
+    const pick = wantBurned
+      ? (files.video_burned || files.video_nosub)
+      : (files.video_nosub || files.video_burned);
+    if (pick) {
+      files.video = pick;
+      files.nosub = pick === files.video_nosub;
+    }
+    // ซับแยกส่งเฉพาะ YouTube — แพลตฟอร์มอื่นเบิร์นมาในภาพแล้ว
+    if (wantBurned) files.srt = null;
+  }
+
   if (!files?.video) {
     return NextResponse.json(
       { error: `ยังไม่มีวิดีโอ${layout === 'portrait' ? 'แนวตั้ง' : 'แนวนอน'}ของเรื่องนี้` },

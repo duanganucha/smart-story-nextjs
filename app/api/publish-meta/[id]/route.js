@@ -36,7 +36,7 @@ export async function GET(_req, { params }) {
 
   const pool = getPool();
   const [rows] = await pool.query(
-    `SELECT id, title, story, moral, story_type, category, age_range,
+    `SELECT id, title, youtube_title, story, moral, story_type, category, age_range,
             topic, student_name, paragraphs, audio_path
      FROM stories WHERE id = ?`, [sid]
   );
@@ -84,18 +84,29 @@ export async function GET(_req, { params }) {
       // (ก่อนหน้านี้ _landscape_nosub ถูกจัดเข้า portrait ผิด)
       const isLand = /_landscape(_nosub)?\.(mp4|srt)$/i.test(f);
       const slot = isLand ? 'landscape' : 'portrait';
-      // เลือกไฟล์ไม่เบิร์นซับก่อนสำหรับ YouTube (ให้ระบบแปลซับได้)
       const isNosub = /_nosub\.(mp4|srt)$/i.test(f);
       const cur = files[slot] || {};
       if (f.toLowerCase().endsWith('.thumb.jpg')) { thumbFile = f; continue; }
       if (f.toLowerCase().endsWith('.mp4')) {
-        // ถ้ามีทั้งเบิร์นและไม่เบิร์น เลือกไม่เบิร์น (เหมาะกับ YouTube กว่า)
-        if (!cur.video || isNosub) files[slot] = { ...cur, video: f, nosub: isNosub };
+        // เก็บทั้งสองแบบไว้ แล้วให้แต่ละแพลตฟอร์มเลือกเอง:
+        //   YouTube  → ไม่เบิร์นซับ (แนบ .srt ให้ระบบแปลได้ 100+ ภาษา)
+        //   Reels/TikTok → เบิร์นซับ (ไม่รองรับไฟล์ซับ + คนดูแบบปิดเสียง)
+        if (isNosub) files[slot] = { ...cur, video_nosub: f };
+        else files[slot] = { ...cur, video_burned: f };
       } else if (f.toLowerCase().endsWith('.srt')) {
         if (!cur.srt || isNosub) files[slot] = { ...cur, srt: f };
       }
     }
   } catch {}
+
+  // ค่า video/nosub เดิมยังคงไว้เพื่อความเข้ากันได้ — ตั้งเป็นตัวไม่เบิร์นซับ
+  // (ผู้เรียกที่ต้องการตัวเบิร์นซับให้ใช้ video_burned)
+  for (const k of ['portrait', 'landscape']) {
+    const v = files[k];
+    if (!v) continue;
+    const pick = v.video_nosub || v.video_burned || null;
+    files[k] = { ...v, video: pick, nosub: !!v.video_nosub };
+  }
 
   // ── แบ่งตอน (chapters) ────────────────────────────────────────────
   // YouTube แสดงแถบแบ่งตอนบน timeline ถ้าคำอธิบายมี timestamp
@@ -183,7 +194,9 @@ export async function GET(_req, { params }) {
     id: r.id,
     // ── ส่งตรงเข้า YouTube Data API (videos.insert) ได้เลย ──
     snippet: {
-      title: r.title || `นิทาน #${r.id}`,
+      // youtube_title = ชื่อที่ปรับให้คนค้นเจอ (มีคำนำ + ช่วงอายุ ไม่เกิน 100 ตัว)
+      // ถ้ายังไม่ได้สร้างไว้ ค่อยใช้ชื่อในแอปแทน
+      title: r.youtube_title || r.title || `นิทาน #${r.id}`,
       description,
       tags,
       categoryId: '24',           // Entertainment
