@@ -80,8 +80,8 @@ export default function PrivacyPage() {
       <Section title="ติดต่อเรา">
         <p>
           มีคำถามเกี่ยวกับข้อมูลของคุณ ติดต่อได้ที่{' '}
-          <a href="mailto:sisaket10700@gmail.com" style={{ color: '#2563eb' }}>
-            sisaket10700@gmail.com
+          <a href="mailto:duanganucha@hotmail.com" style={{ color: '#2563eb' }}>
+            duanganucha@hotmail.com
           </a>
         </p>
       </Section>
