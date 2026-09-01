@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import StoryPlayer from './StoryPlayer';
 import ConfigDialog from './ConfigDialog';
+import KeysDialog from './KeysDialog';
 
 const STATUS_LABEL = { queued: 'รอคิว', processing: 'กำลังทำ', done: 'เสร็จ', error: 'ผิดพลาด' };
 
@@ -28,6 +29,7 @@ export default function Home() {
   const [expanded, setExpanded] = useState(null);
   const [player, setPlayer] = useState(null);
   const [showConfig, setShowConfig] = useState(false);
+  const [showKeys, setShowKeys] = useState(false);
   const [alertErr, setAlertErr] = useState(null);
   const [dismissedId, setDismissedId] = useState(0);
   const [editing, setEditing] = useState(null);
@@ -66,6 +68,11 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, []);
   useEffect(() => { document.__rows = rows; }, [rows]);
+
+  async function logout() {
+    await fetch('/api/session', { method: 'DELETE' });
+    window.location.replace('/login');
+  }
 
   function onFile(e) {
     const f = e.target.files?.[0] || null;
@@ -190,7 +197,12 @@ export default function Home() {
             สร้างนิทานจากรูปภาพหรือหัวข้อ — เนื้อเรื่อง/เสียง/ฉากภาพ เลือก provider ได้ · เก็บลง MySQL + ไฟล์ในเครื่อง · ทำหลายเรื่องพร้อมกันได้
           </p>
         </div>
+        <a className="cfgbtn" href="/pipeline" style={{ textDecoration: 'none' }}>📊 สถานะ</a>
+        <a className="cfgbtn" href="/insights" style={{ textDecoration: 'none' }}>📈 แนวโน้ม</a>
+        <a className="cfgbtn" href="/videos" style={{ textDecoration: 'none' }}>🎬 วิดีโอ</a>
+        <button className="cfgbtn" onClick={() => setShowKeys(true)} title="จัดการ API Key">🔑</button>
         <button className="cfgbtn" onClick={() => setShowConfig(true)}>⚙️ ตั้งค่า</button>
+        <button className="cfgbtn" onClick={logout} title="ออกจากระบบ">🚪 ออก</button>
       </div>
 
       <form className="card" onSubmit={submit}>
@@ -435,6 +447,7 @@ export default function Home() {
       </div>
 
       {player && <StoryPlayer story={player} onClose={() => setPlayer(null)} />}
+      {showKeys && <KeysDialog onClose={() => setShowKeys(false)} />}
       {showConfig && <ConfigDialog onClose={() => setShowConfig(false)} />}
 
       {alertErr && alertErr.id !== dismissedId && (

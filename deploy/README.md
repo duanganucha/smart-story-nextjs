@@ -14,6 +14,7 @@ local mac  ──build-dist.sh──►  dist/  ──copy──►  Windows ser
 
 ```bash
 cd smart-story-nextjs
+node scripts-gen-thumbs.mjs      # scene image variants — see section H
 bash deploy/build-dist.sh
 ```
 
@@ -116,6 +117,126 @@ flutter build appbundle --release --dart-define=API_BASE_URL=https://api.bearryt
   server's `.env.production`.)
 - **New stories only:** re-export the DB (`db-export.sh`) + copy new files under
   `public/` to the server's `public/`, then `pm2 restart smart-story`.
+  Stories generated after the variant hook landed already carry their
+  `_thumb`/`_med` files — copy the whole scene folder, not just the PNGs
+  (see section H).
+
+## H. Scene image variants (thumbnails) — required for fast loading
+
+Every scene PNG (~2 MB, 1376x768) has two downscaled WebP companions written
+beside it. The apps request these instead of the PNG, which is the difference
+between a library grid pulling ~11 MB and pulling ~130 KB.
+
+| File | Size | Used by |
+|---|---|---|
+| `scene_01.png` | ~1.9 MB | archive original; fallback if a variant is missing |
+| `scene_01_med.webp` | ~100 KB | the player's main image |
+| `scene_01_thumb.webp` | ~20 KB | library grid covers, filmstrip, low-res placeholder |
+
+### New stories need no action
+
+`renderImage()` in [`lib/scenes.js`](../lib/scenes.js) builds both variants right
+after it writes a PNG. Every path goes through it — new story, "regenerate
+storyboard", "regenerate one scene", SUT engine and Gemini engine alike — so any
+story generated from now on ships with its variants. A variant that fails to
+build is logged and skipped, never failing the story, because the apps fall back
+to the PNG.
+
+### Existing stories need a one-time backfill
+
+Images generated before that hook existed have only the PNG. Build their
+variants on the **mac**, before `build-dist.sh`:
+
+```bash
+cd smart-story-nextjs
+node scripts-gen-thumbs.mjs           # every story missing variants
+node scripts-gen-thumbs.mjs 41 79     # only these story ids
+node scripts-gen-thumbs.mjs --force   # rebuild even if they already exist
+```
+
+Safe to re-run — it skips finished work and prints
+`Nothing to do` when there is none. As a reference point, the initial backfill
+turned 599 PNGs into 1198 variants (2330 MB read → 79 MB written) in a few
+minutes with no failures.
+
+### Getting them onto the server
+
+`build-dist.sh` copies the whole `public/` tree, so **the variants travel with a
+normal deploy** — no extra step, they are simply part of `dist/public/scenes/`.
+Budget roughly **+80 MB** on top of the existing `dist/` size.
+
+If you need to push variants to a **running** server without a full redeploy
+(e.g. you backfilled a few old stories), use the upload script instead:
+
+```bash
+bash scripts-upload-thumbs.sh          # all stories
+bash scripts-upload-thumbs.sh 79 92    # only these ids
+```
+
+It POSTs each file to `/api/scenes/upload` over Basic Auth and skips anything
+the server already serves at the same byte size, so re-running is cheap. It is
+the WebP companion to `scripts-upload-scenes.sh` (which pushes the PNGs).
+
+> That endpoint must exist on the server first. A deploy predating it answers
+> `404 Server action not found` — deploy the current build, then upload.
+
+### `sharp` is native — the server needs its own binary
+
+`lib/scenes.js` imports `sharp`, which ships a **platform-specific** binary.
+A `dist/` built on a mac carries `@img/sharp-darwin-arm64`, which cannot load on
+the Windows server: every API route then 500s with
+
+```
+Error: Could not load the "sharp" module using the win32-x64 runtime
+```
+
+Images still serve (they are static files) but `/api/stories` fails, so the apps
+show an empty library. Fix it **on the server**, once per machine:
+
+```powershell
+cd D:\WEB_SITE\smart-story
+npm install --no-save --os=win32 --cpu=x64 sharp
+pm2 restart smart-story
+```
+
+Verify `node_modules\@img` contains `sharp-win32-x64`. Re-run this after any
+deploy that replaces `node_modules` with the mac-built copy.
+
+### Cache headers
+
+[`next.config.js`](../next.config.js) serves `/scenes/*` and `/audio/*` with
+`Cache-Control: public, max-age=31536000, immutable`. This is safe because a
+regenerated scene is served under a **new** `?v=<timestamp>` URL, so bytes at a
+given URL never change. Without it Next sends `max-age=0` and every cached image
+still costs a revalidation round-trip.
+
+The supplied `Caddyfile` is a plain `reverse_proxy` with no `header` directive,
+so this passes through untouched. **After deploying, confirm it survived:**
+
+```bash
+curl -sI https://bearrytales.datainfo.cloud/scenes/92/scene_01_med.webp \
+  | grep -i cache-control
+# expect: Cache-Control: public, max-age=31536000, immutable
+```
+
+If it comes back `max-age=0`, something in front of Next (a changed Caddyfile,
+or IIS per section E) is rewriting the header — fix it there, not in the app.
+
+### Verifying a deploy
+
+```bash
+B=https://bearrytales.datainfo.cloud
+for f in scene_01.png scene_01_med.webp scene_01_thumb.webp; do
+  printf '%-22s ' "$f"
+  curl -sI "$B/scenes/92/$f" | grep -iE '^HTTP|content-type' | tr -d '\r' | tr '\n' ' '
+  echo
+done
+```
+
+All three should return `200`, with the `.webp` files typed `image/webp`.
+A `404` on the variants means `public/` was copied without them.
+
+---
 
 ## Notes
 - Content **generation** (Gemini / SUT / Python) is admin-only and **not** required
@@ -123,3 +244,6 @@ flutter build appbundle --release --dart-define=API_BASE_URL=https://api.bearryt
   to the server, or set `GEMINI_API_KEY` on the server to generate there.
 - Story audio/images are plain files under `public/` — they are served directly
   by Next.js, so they must be copied to the server alongside the build.
+- Each scene image ships as three files (PNG + two WebP variants). Copy whole
+  scene folders; copying only `*.png` leaves the apps loading megabyte images.
+  See section H.
