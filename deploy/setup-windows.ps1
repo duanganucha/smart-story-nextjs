@@ -93,7 +93,7 @@ if (-not (Test-Path $envFile)) {
     -replace '^DB_PASSWORD=.*', "DB_PASSWORD=$AppDbPassword" `
     -replace '^DB_NAME=.*',     "DB_NAME=$DbName" |
     Set-Content $envFile -Encoding UTF8
-  Write-Host "    created .env.production (review GOOGLE_CLIENT_IDS / APPLE_CLIENT_IDS / GEMINI_API_KEY)" -ForegroundColor Yellow
+  Write-Host "    created .env.production (SET ADMIN_USERS + JWT_SECRET (required), review GOOGLE_CLIENT_IDS / APPLE_CLIENT_IDS / GEMINI_API_KEY)" -ForegroundColor Yellow
 } else {
   Write-Host "    .env.production already exists — leaving as-is"
 }

@@ -2,14 +2,16 @@ import { NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 
 // ADMIN_USERS = "email:pass,email:pass" — controls who can access the web UI.
-const FALLBACK_USERS = 'duanganucha@hotmail.com:1669';
+// No hardcoded fallback: if ADMIN_USERS is unset the admin surface is closed
+// (every Basic-Auth check fails) rather than opening on a credential that
+// anyone reading the source would know.
 
 // REQUIRE_TOKEN=true → GET /api/* and media require a valid Bearer JWT.
 // Keep false until the mobile app is updated to send the token.
 const REQUIRE_TOKEN = process.env.REQUIRE_TOKEN === 'true';
 
 function allowedUsers() {
-  const raw = process.env.ADMIN_USERS || FALLBACK_USERS;
+  const raw = process.env.ADMIN_USERS || '';
   const map = {};
   for (const pair of raw.split(',')) {
     const i = pair.indexOf(':');
@@ -39,11 +41,23 @@ function checkBasicAuth(req) {
   return users[user] !== undefined && users[user] === pass;
 }
 
+async function checkSessionCookie(req) {
+  const token = req.cookies.get('ss_admin')?.value;
+  if (!token || !process.env.JWT_SECRET) return false;
+  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+  try {
+    await jwtVerify(token, secret, { algorithms: ['HS256'] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function checkBearerToken(req) {
   const h = req.headers.get('authorization') || '';
   const m = h.match(/^Bearer\s+(.+)$/i);
-  if (!m) return false;
-  const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'dev-insecure-change-me');
+  if (!m || !process.env.JWT_SECRET) return false;
+  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
   try {
     await jwtVerify(m[1], secret, { algorithms: ['HS256'] });
     return true;
@@ -56,7 +70,10 @@ export async function middleware(req) {
   const { pathname } = req.nextUrl;
   const method = req.method.toUpperCase();
 
-  const isMobileAuth = pathname === '/api/auth' || pathname === '/api/token';
+  // Mobile-app endpoints the logged-in app calls without Basic Auth.
+  // /api/account is the in-app account-deletion endpoint (App Store 5.1.1(v)).
+  const isMobileAuth =
+    pathname === '/api/auth' || pathname === '/api/token' || pathname === '/api/account';
   const isRead = method === 'GET' || method === 'HEAD';
   const isApi = pathname.startsWith('/api/');
   const isMedia =
@@ -67,6 +84,14 @@ export async function middleware(req) {
 
   // Mobile auth/token endpoints — always open
   if (isMobileAuth) return NextResponse.next();
+
+  // Dev-only convenience login (ปิดตายใน production ทั้งที่นี่และในตัว route เอง)
+  if (pathname === '/api/dev-login' && process.env.NODE_ENV !== 'production') {
+    return NextResponse.next();
+  }
+
+  // หน้า login และ API session — ต้องเข้าถึงได้โดยไม่ต้องล็อกอิน
+  if (pathname === '/login' || pathname === '/api/session') return NextResponse.next();
 
   if (REQUIRE_TOKEN) {
     // Bearer JWT required for read APIs and media
@@ -80,9 +105,19 @@ export async function middleware(req) {
     if (isMedia || (isApi && isRead)) return NextResponse.next();
   }
 
-  // Admin web pages + write APIs → Basic Auth
-  if (!checkBasicAuth(req)) return unauthorized();
-  return NextResponse.next();
+  // Admin web pages + write APIs
+  // รับได้ทั้ง cookie session (จากหน้า /login) และ Basic Auth (สคริปต์/เครื่องมือเดิม)
+  if (await checkSessionCookie(req)) return NextResponse.next();
+  if (checkBasicAuth(req)) return NextResponse.next();
+
+  // เรียกจากหน้าเว็บ → พาไปหน้า login สวย ๆ แทน popup ของเบราว์เซอร์
+  if (!isApi) {
+    const url = req.nextUrl.clone();
+    url.pathname = '/login';
+    url.search = `?next=${encodeURIComponent(pathname + req.nextUrl.search)}`;
+    return NextResponse.redirect(url);
+  }
+  return unauthorized();
 }
 
 export const config = {
