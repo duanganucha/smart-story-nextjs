@@ -94,6 +94,23 @@ export async function PATCH(req, { params }) {
   queryParams.push(sid);
 
   await pool.query(queryStr, queryParams);
+
+  // บันทึกสถิติแบบไม่ระบุตัวตน — เก็บแค่ว่า "เรื่องแบบไหนถูกดู/ถูกกดใจ"
+  // ไม่มี user_id / ip / device id โดยตั้งใจ เพื่อดูแนวโน้มว่าควรผลิตแนวไหนต่อ
+  // ทำงานแบบไม่ขวางการตอบกลับ — ถ้าล้มเหลวก็ไม่กระทบผู้ใช้
+  {
+    const evType = incrementViews ? 'view'
+      : (lovingUserId && body.is_loved !== undefined)
+        ? (body.is_loved === true || body.is_loved === 1 ? 'love' : 'unlove')
+        : null;
+    if (evType) {
+      pool.query(
+        `INSERT INTO story_events (story_id, type, category, age_range, story_type)
+         SELECT ?, ?, category, age_range, story_type FROM stories WHERE id = ?`,
+        [sid, evType, sid]
+      ).catch(() => {});
+    }
+  }
   const [rows] = await pool.query(
     `SELECT s.*, IF(sl.user_id IS NOT NULL, 1, 0) AS is_loved
      FROM stories s
