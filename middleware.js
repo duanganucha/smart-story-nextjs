@@ -93,6 +93,11 @@ export async function middleware(req) {
   // หน้า login และ API session — ต้องเข้าถึงได้โดยไม่ต้องล็อกอิน
   if (pathname === '/login' || pathname === '/api/session') return NextResponse.next();
 
+  // นโยบายความเป็นส่วนตัว — ต้องเปิดได้แบบสาธารณะ
+  // Meta และ Google บังคับให้ Privacy Policy URL เข้าถึงได้โดยไม่ต้องล็อกอิน
+  // ตอนตรวจ App Review ถ้าติด Basic Auth จะถูกปฏิเสธ
+  if (pathname === '/privacy') return NextResponse.next();
+
   if (REQUIRE_TOKEN) {
     // Bearer JWT required for read APIs and media
     if (isMedia || (isApi && isRead)) {
