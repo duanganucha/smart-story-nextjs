@@ -133,12 +133,22 @@ export async function POST(req) {
   //   Reels/TikTok ไม่รับไฟล์ซับ และคนส่วนใหญ่ดูแบบปิดเสียง → ต้องเบิร์นซับติดภาพ
   if (files) {
     const wantBurned = platform !== 'youtube';
-    const pick = wantBurned
-      ? (files.video_burned || files.video_nosub)
-      : (files.video_nosub || files.video_burned);
+
+    // Facebook Reels รับไม่เกิน 90 วินาที — คลิปนิทานยาว 2-5 นาที
+    // ถ้าส่งคลิปเต็มไป Facebook รับไฟล์แต่จัดเป็น "วิดีโอธรรมดา"
+    // ซึ่งไม่ได้ reach จากฟีด Reels เลย จึงต้องใช้ตัวที่ตัดมาแล้ว
+    // (สร้างด้วย bearrytales-video/make-reel.py)
+    const wantReel = platform === 'facebook' && layout === 'portrait';
+
+    const pick = wantReel
+      ? (files.video_reel || files.video_burned || files.video_nosub)
+      : wantBurned
+        ? (files.video_burned || files.video_nosub)
+        : (files.video_nosub || files.video_burned);
     if (pick) {
       files.video = pick;
       files.nosub = pick === files.video_nosub;
+      files.is_reel = pick === files.video_reel;
     }
     // ซับแยกส่งเฉพาะ YouTube — แพลตฟอร์มอื่นเบิร์นมาในภาพแล้ว
     if (wantBurned) files.srt = null;

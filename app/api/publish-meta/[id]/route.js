@@ -85,8 +85,16 @@ export async function GET(_req, { params }) {
       const isLand = /_landscape(_nosub)?\.(mp4|srt)$/i.test(f);
       const slot = isLand ? 'landscape' : 'portrait';
       const isNosub = /_nosub\.(mp4|srt)$/i.test(f);
+      // _reel = คลิปสั้นที่ตัดมาให้ไม่เกิน 90 วิ (ลิมิต Facebook Reels)
+      // ต้องแยกเก็บ ไม่งั้นจะทับไฟล์เต็มแล้วอัปคลิปสั้นไปทุกที่
+      const isReel = /_reel\.(mp4|srt)$/i.test(f);
       const cur = files[slot] || {};
       if (f.toLowerCase().endsWith('.thumb.jpg')) { thumbFile = f; continue; }
+      if (isReel) {
+        if (f.toLowerCase().endsWith('.mp4')) files[slot] = { ...cur, video_reel: f };
+        else files[slot] = { ...cur, srt_reel: f };
+        continue;
+      }
       if (f.toLowerCase().endsWith('.mp4')) {
         // เก็บทั้งสองแบบไว้ แล้วให้แต่ละแพลตฟอร์มเลือกเอง:
         //   YouTube  → ไม่เบิร์นซับ (แนบ .srt ให้ระบบแปลได้ 100+ ภาษา)
