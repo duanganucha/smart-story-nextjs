@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import KeysDialog from '../KeysDialog';
+import { Toasts, useToasts } from '../Toast';
 
 const STEPS = [
   ['s1_story', 'เนื้อเรื่อง'],
@@ -76,6 +77,9 @@ export default function PipelinePage() {
   const [pub, setPub] = useState({ platforms: [], done: {} });
   const [pubMsg, setPubMsg] = useState('');
   const [askPub, setAskPub] = useState(null);
+  const [toasts, pushToast, dismissToast] = useToasts();
+  // เก็บสถานะงานอัปโหลดรอบก่อน — ใช้เทียบว่างานไหนเพิ่งเปลี่ยนเป็น done/error
+  const [seenPub, setSeenPub] = useState(null);
   const [schedOn, setSchedOn] = useState(false);
   const [schedAt, setSchedAt] = useState('');
 
@@ -260,12 +264,52 @@ export default function PipelinePage() {
     load();
     // รีเฟรชอัตโนมัติเมื่อมีงานกำลังทำอยู่ (เหมือน dashboard ของ video-dub)
     const t = setInterval(() => {
-      if (document.__busy || document.__queue) load();
+      // เดิมโพลเฉพาะตอนคิวเรนเดอร์ทำงาน ทำให้งานอัปโหลดที่ทำเบื้องหลัง
+      // ไม่ถูกรีเฟรช → สถานะค้างและ toast ไม่เด้ง
+      if (document.__busy || document.__queue || document.__uploading) load();
     }, 5000);
     return () => clearInterval(t);
   }, []);
 
   // งานในคิวของแต่ละเรื่อง — ใช้ให้แถวแสดงสถานะสดว่ากำลังทำอะไร
+  // ── แจ้งเตือนเมื่ออัปโหลดเสร็จ ────────────────────────────────
+  // งานอัปโหลดทำเบื้องหลัง ผู้ใช้ปิดไดอะล็อกไปแล้วจึงไม่รู้ว่าจบเมื่อไหร่
+  // จึงเทียบสถานะกับรอบก่อน แล้วเด้ง toast เฉพาะตัวที่ "เพิ่งเปลี่ยน"
+  useEffect(() => {
+    const jobs = pub?.jobs || [];
+    // บอก interval ด้านบนว่ายังมีงานอัปโหลดที่ยังไม่จบ ให้รีเฟรชต่อ
+    document.__uploading = jobs.some(
+      (j) => j.status === 'uploading' || j.status === 'processing');
+    if (!jobs.length) return;
+    const now = new Map(jobs.map((j) => [j.id, j.status]));
+
+    // รอบแรกหลังเปิดหน้า: จำไว้เฉย ๆ ไม่เด้ง ไม่งั้นจะเด้งงานเก่าทั้งหมด
+    if (seenPub === null) { setSeenPub(now); return; }
+
+    for (const j of jobs) {
+      const before = seenPub.get(j.id);
+      if (before === undefined || before === j.status) continue;
+      const name = clips.find((c) => c.id === j.story_id)?.title || `#${j.story_id}`;
+      const plat = (pub.platforms || []).find((x) => x.key === j.platform);
+      const label = plat?.label || j.platform;
+
+      if (j.status === 'done') {
+        pushToast({ kind: 'ok', title: `ขึ้น ${label} แล้ว`,
+                    msg: name, href: j.remote_url || null, ttl: 9000 });
+      } else if (j.status === 'error') {
+        pushToast({ kind: 'bad', title: `อัป ${label} ไม่สำเร็จ`,
+                    msg: `${name} — ${(j.error || 'ไม่ทราบสาเหตุ').slice(0, 120)}` });
+      } else if (j.status === 'processing') {
+        // ส่งไฟล์ขึ้นครบแล้ว — ที่เหลือแพลตฟอร์มแปลงไฟล์เอง ถือว่าอัปสำเร็จ
+        // (Facebook ค้างสถานะนี้จนกว่าจะ poll ซ้ำ จึงต้องเด้งตรงนี้ ไม่ใช่รอ done)
+        pushToast({ kind: 'ok', title: `อัปขึ้น ${label} แล้ว`,
+                    msg: `${name} — กำลังแปลงไฟล์ อีกสักครู่จะดูได้`,
+                    href: j.remote_url || null, ttl: 9000 });
+      }
+    }
+    setSeenPub(now);
+  }, [pub]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   const jobsById = useMemo(() => {
     const m = new Map();
     for (const j of queue.jobs) {
@@ -698,10 +742,21 @@ export default function PipelinePage() {
                                     disabled={!pl.ready || !lay}>{pl.icon}</button>
                           ) : (
                             <button className="pcell" disabled={!can}
-                                    onClick={() => setAskPub({
-                                      id: c.id, title: c.title,
-                                      platform: pl.key, label: pl.label, layout: lay,
-                                    })}
+                                    onClick={() => {
+                                      // Facebook แนวตั้ง = Reels ซึ่งจำกัด 90 วิ
+                                      // ระบบจะส่งคลิปสั้นให้อัตโนมัติ (ดู app/api/publish)
+                                      const useReel = pl.key === 'facebook'
+                                        && lay === 'portrait' && !!c.video_file_reel;
+                                      setAskPub({
+                                        id: c.id, title: c.title,
+                                        platform: pl.key, label: pl.label, layout: lay,
+                                        fileLabel: useReel
+                                          ? 'คลิปสั้น ≤90 วิ (Reels)'
+                                          : lay === 'portrait'
+                                            ? 'คลิปเต็ม แนวตั้ง' : 'คลิปเต็ม แนวนอน',
+                                        pubTitle: c.youtube_title || c.title,
+                                      });
+                                    }}
                                     title={
                                       !pl.ready ? `${pl.label} ยังไม่ตั้งค่า`
                                       : !lay ? 'ยังไม่มีวิดีโอที่รองรับ'
@@ -779,6 +834,8 @@ export default function PipelinePage() {
         </div>
       )}
 
+      <Toasts items={toasts} onDismiss={dismissToast} />
+
       {askPub && (
         <div className="modal-overlay" onClick={() => setAskPub(null)}>
           <div className="cfbox" onClick={(e) => e.stopPropagation()}>
@@ -796,6 +853,16 @@ export default function PipelinePage() {
               <span className={`badge ${askPub.layout === 'landscape' ? 'proc' : 'topic'}`}>
                 {askPub.layout === 'landscape' ? 'แนวนอน 1920×1080' : 'แนวตั้ง 1080×1920'}
               </span>
+            </div>
+            {/* บอกให้ชัดว่าจะส่งไฟล์ไหนขึ้นไปจริง ๆ
+                Facebook แนวตั้งใช้คลิปสั้น (_reel) ส่วนที่อื่นใช้คลิปเต็ม */}
+            <div className="cfrow">
+              <span className="cflab">ไฟล์</span>
+              <span>{askPub.fileLabel}</span>
+            </div>
+            <div className="cfrow">
+              <span className="cflab">ชื่อที่ใช้</span>
+              <span style={{ fontSize: 12, lineHeight: 1.5 }}>{askPub.pubTitle}</span>
             </div>
             <div className="cfrow">
               <span className="cflab">เริ่มต้น</span>

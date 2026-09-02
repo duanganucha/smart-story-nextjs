@@ -20,7 +20,7 @@ const VIDEO_DIR =
 export async function GET() {
   const pool = getPool();
   const [rows] = await pool.query(
-    `SELECT id, title, story_type, category, status, stage, error,
+    `SELECT id, title, youtube_title, story_type, category, status, stage, error,
             paragraphs, audio_path, scenes, story,
             engine_story, engine_tts, engine_image,
             views, loves, created_at, updated_at
@@ -135,6 +135,7 @@ export async function GET() {
       video_file_ns: madeVn.get(r.id) || null,    // แนวตั้ง ไม่เบิร์น
       video_file_hns: madeHn.get(r.id) || null,   // แนวนอน ไม่เบิร์น
       video_file_reel: madeR.get(r.id) || null,   // คลิปสั้น <=90 วิ (Facebook Reels)
+      youtube_title: r.youtube_title || null,     // ชื่อที่ใช้ตอนอัปโหลด (ต่างจากชื่อในแอป)
       // ไฟล์ซับ: นับรวม และเช็คทีละแบบว่ามีคู่ครบไหม
       srt_count: srtByStory.get(r.id) || 0,
       chapters: chapByStory.get(r.id) || null,

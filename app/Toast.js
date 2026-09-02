@@ -41,6 +41,11 @@ export function Toasts({ items, onDismiss }) {
           <div className="tbody">
             {t.title && <div className="ttitle">{t.title}</div>}
             {t.msg && <div className="tmsg">{t.msg}</div>}
+            {/* ลิงก์ไปดูของจริง — กดแล้วต้องไม่ปิด toast ทันที */}
+            {t.href && (
+              <a className="tlink" href={t.href} target="_blank" rel="noreferrer"
+                 onClick={(e) => e.stopPropagation()}>เปิดดู →</a>
+            )}
           </div>
         </div>
       ))}
@@ -53,6 +58,11 @@ export function Toasts({ items, onDismiss }) {
           max-width: min(380px, calc(100vw - 36px));
           pointer-events: none;
         }
+        .tlink {
+          display: inline-block; margin-top: 5px;
+          color: #7dd3fc; font-size: 12px; text-decoration: none;
+        }
+        .tlink:hover { text-decoration: underline; }
         .tcard {
           pointer-events: auto; cursor: pointer;
           display: flex; gap: 10px; align-items: flex-start;
