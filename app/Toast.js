@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * Toast แจ้งผลแบบลอยมุมขวาบน — ใช้ร่วมกันได้ทุกหน้า
@@ -29,7 +30,16 @@ export function useToasts() {
 }
 
 export function Toasts({ items, onDismiss }) {
-  return (
+  // เรนเดอร์ไปที่ <body> ตรง ๆ ไม่ใช่ในตำแหน่งที่ถูกเรียก
+  //
+  // ทำไม: ถ้า toast อยู่ใน element ที่มี transform / filter / opacity < 1
+  // element นั้นจะสร้าง stacking context ใหม่ ทำให้ z-index ของ toast
+  // ถูกจำกัดอยู่แค่ในกล่องนั้น ต่อให้ตั้งเป็นค่าสูงสุดก็ยังโดนบัง
+  // การส่งไป body ตัดปัญหานี้ถาวร ไม่ว่าหน้าไหนจะเรียกใช้จากตรงไหน
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);   // portal ใช้ได้เฉพาะฝั่ง client
+
+  const stack = (
     <div className="tstack">
       {items.map((t) => (
         <div key={t.id} className={`tcard ${t.kind || 'info'}`}
@@ -53,7 +63,11 @@ export function Toasts({ items, onDismiss }) {
       <style jsx>{`
         .tstack {
           position: fixed; top: 18px; right: 18px;
-          z-index: 200;   /* สูงกว่า modal-overlay (50) เพื่อให้เห็นทับ dialog */
+          /* ค่าสูงสุดของ z-index — toast ต้องลอยเหนือทุกอย่างเสมอ
+             ไม่ผูกกับเลขของ overlay ตัวใดตัวหนึ่ง เพราะถ้ามีใครเพิ่ม
+             overlay z-index สูงกว่าในอนาคต toast จะโดนบังโดยไม่มีใครรู้ */
+          z-index: 2147483647;
+          isolation: isolate;
           display: flex; flex-direction: column; gap: 9px;
           max-width: min(380px, calc(100vw - 36px));
           pointer-events: none;
@@ -94,4 +108,6 @@ export function Toasts({ items, onDismiss }) {
       `}</style>
     </div>
   );
+
+  return mounted ? createPortal(stack, document.body) : null;
 }
