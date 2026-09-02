@@ -34,6 +34,7 @@ export async function GET() {
   const madeVn = new Map();   // แนวตั้ง ไม่เบิร์น
   const madeH = new Map();    // แนวนอน เบิร์น
   const madeHn = new Map();   // แนวนอน ไม่เบิร์น
+  const madeR = new Map();    // คลิปสั้น (_reel) — ตัดให้ไม่เกิน 90 วิ สำหรับ Reels
   const srtSet = new Set();   // ชื่อไฟล์ .srt ที่มีอยู่ (ไม่รวมนามสกุล)
   const chapByStory = new Map();  // id → { count, accurate }
   const thumbByStory = new Map(); // id → ชื่อไฟล์ปก
@@ -76,6 +77,8 @@ export async function GET() {
       const m = f.match(/^(\d+)_/);
       if (!m) continue;
       const id = Number(m[1]);
+      // _reel ต้องเช็คก่อน ไม่งั้นจะตกไปกอง "แนวตั้ง เบิร์น" แล้วทับไฟล์เต็ม
+      if (/_reel\.mp4$/i.test(f)) { madeR.set(id, f); continue; }
       const land = /_landscape(_nosub)?\.mp4$/i.test(f);
       const nosub = /_nosub\.mp4$/i.test(f);
       if (land && nosub) madeHn.set(id, f);
@@ -131,6 +134,7 @@ export async function GET() {
       video_file_h: madeH.get(r.id) || null,
       video_file_ns: madeVn.get(r.id) || null,    // แนวตั้ง ไม่เบิร์น
       video_file_hns: madeHn.get(r.id) || null,   // แนวนอน ไม่เบิร์น
+      video_file_reel: madeR.get(r.id) || null,   // คลิปสั้น <=90 วิ (Facebook Reels)
       // ไฟล์ซับ: นับรวม และเช็คทีละแบบว่ามีคู่ครบไหม
       srt_count: srtByStory.get(r.id) || 0,
       chapters: chapByStory.get(r.id) || null,

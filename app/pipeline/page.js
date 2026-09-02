@@ -714,6 +714,21 @@ export default function PipelinePage() {
                     <td className="cwhen">{fmtDate(c.updated_at)}</td>
                     <td className="cact" onClick={(e) => e.stopPropagation()}>
                       <div className="acts">
+                          {/* คลิปสั้น — แยกจากปุ่มอื่นเพราะเป็นไฟล์คนละตัว
+                              (ตัดมาจากคลิปเต็มให้ไม่เกิน 90 วิ ตามลิมิต Facebook Reels)
+                              สร้างด้วย bearrytales-video/make-reel.py */}
+                          {c.video_file_reel ? (
+                            <button className="abtn play v-reel"
+                                    title="คลิปสั้น ≤90 วิ — Facebook Reels (ตัดจากคลิปเต็ม)"
+                                    onClick={() => setPlaying({
+                                      ...c, file: c.video_file_reel,
+                                      mode: 'portrait', nosub: false, alt: c.video_file || null,
+                                    })}>▶ สั้น</button>
+                          ) : c.video_file ? (
+                            <span className="abtn norl"
+                                  title="ยังไม่มีคลิปสั้น — สร้างด้วย: python3 make-reel.py {id}"
+                                  >– สั้น</span>
+                          ) : null}
                           {[
                             ['video_file',    'Reel',   'portrait',  true,  'pv',
                              'แนวตั้ง เบิร์นซับ — TikTok / Reels'],
@@ -1845,6 +1860,12 @@ export default function PipelinePage() {
           background: rgba(245,158,11,.12); color: #fde68a; }
         .abtn.play.v-ln { border-color: rgba(56,189,248,.45);
           background: rgba(56,189,248,.12); color: #bae6fd; }
+        /* คลิปสั้น — สีชมพูให้ต่างจากอีก 4 ปุ่มชัดเจน เพราะเป็นไฟล์คนละชนิด */
+        .abtn.play.v-reel { border-color: rgba(236,72,153,.55);
+          background: rgba(236,72,153,.16); color: #fbcfe8; font-weight: 600; }
+        /* มีคลิปเต็มแล้วแต่ยังไม่ได้ตัดสั้น */
+        .abtn.norl { border-style: dashed; border-color: rgba(236,72,153,.25);
+          color: #64748b; cursor: help; }
         .abtn.play:hover { filter: brightness(1.35); }
         /* ยังไม่มีไฟล์ — จางไว้ กดเพื่อสร้างแบบนั้น */
         .abtn.mk {
