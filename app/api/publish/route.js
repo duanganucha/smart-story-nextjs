@@ -228,12 +228,14 @@ export async function POST(req) {
             `SELECT platform, remote_url FROM publish_jobs
              WHERE story_id = ? AND status IN ('done','processing')
                AND remote_url IS NOT NULL AND layout <> 'photo' AND id <> ?
-             ORDER BY FIELD(platform,'youtube','facebook'), id DESC LIMIT 1`,
+             ORDER BY FIELD(platform,'facebook','youtube'), id DESC LIMIT 1`,
             [sid, jobId]);
           if (full.length) {
-            const where = full[0].platform === 'youtube' ? 'บน YouTube' : '';
+            // ชี้ไปคลิปเต็มบน Facebook ก่อนเสมอ — ลิงก์ในแพลตฟอร์มเดียวกัน
+            // ไม่โดนลด reach และคนดูไม่ต้องออกจากแอป
+            const where = full[0].platform === 'youtube' ? ' บน YouTube' : '';
             await pub.comment(out.remote_id,
-              `🎬 ดูนิทานฉบับเต็ม${where ? ' ' + where : ''}ได้ที่นี่\n${full[0].remote_url}`);
+              `🎬 ดูนิทานฉบับเต็ม${where}ได้ที่นี่\n${full[0].remote_url}`);
           }
         } catch {
           // แปะลิงก์ไม่สำเร็จไม่ควรทำให้ทั้งงานล้ม — คลิปขึ้นแล้ว

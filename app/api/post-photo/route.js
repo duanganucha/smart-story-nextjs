@@ -80,23 +80,29 @@ export async function POST(req) {
       { error: 'เรื่องนี้โพสต์ภาพไปแล้ว', url: dup.remote_url }, { status: 409 });
   }
 
-  // ลิงก์อ้างอิงไปคลิปที่เคยอัปไว้ — ให้คนที่เห็นภาพไปดูคลิปเต็มต่อได้
+  // ลิงก์อ้างอิงไปคลิปเต็ม — ให้คนที่เห็นภาพไปดูต่อได้
+  //
+  // ลำดับความสำคัญ: คลิปเต็มบน Facebook มาก่อน YouTube เสมอ
+  //   1) ลิงก์ในแพลตฟอร์มเดียวกันไม่โดนลด reach เลย
+  //      (ลิงก์ YouTube โดนลดหนักสุดเพราะเป็นคู่แข่งตรง ๆ)
+  //   2) คนดูไม่ต้องออกจากแอป Facebook → ดูจบมากกว่า
+  //   3) ยอดวิวสะสมอยู่บนเพจเราเอง ช่วยให้ระบบดันคลิปถัดไป
+  // ใช้ YouTube ต่อเมื่อยังไม่มีคลิปเต็มบน Facebook
   const links = [];
   if (body.with_links !== false) {
     const [rows] = await pool.query(
       `SELECT platform, layout, remote_url FROM publish_jobs
-       WHERE story_id = ? AND status IN ('done','processing') AND remote_url IS NOT NULL
+       WHERE story_id = ? AND status IN ('done','processing')
+         AND remote_url IS NOT NULL AND layout <> 'photo'
        ORDER BY id DESC`, [sid]);
-    const seen = new Set();
-    for (const r of rows) {
-      const key = `${r.platform}:${r.layout}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      if (r.platform === 'youtube') {
-        links.push({ label: '▶ ดูฉบับเต็มบน YouTube', url: r.remote_url });
-      } else if (r.platform === 'facebook' && r.layout === 'landscape') {
-        links.push({ label: '▶ ดูฉบับเต็ม', url: r.remote_url });
-      }
+
+    const fbFull = rows.find((r) => r.platform === 'facebook' && r.layout === 'landscape')
+                || rows.find((r) => r.platform === 'facebook' && r.layout === 'portrait');
+    if (fbFull) {
+      links.push({ label: '▶ ดูนิทานฉบับเต็ม', url: fbFull.remote_url });
+    } else {
+      const yt = rows.find((r) => r.platform === 'youtube');
+      if (yt) links.push({ label: '▶ ดูนิทานฉบับเต็มบน YouTube', url: yt.remote_url });
     }
   }
 
@@ -107,11 +113,22 @@ export async function POST(req) {
   const jobId = ins.insertId;
 
   try {
+    // ⚠️ ไม่ส่ง links เข้าแคปชัน — Facebook ลด reach โพสต์ที่มีลิงก์ออก
+    // นอกแพลตฟอร์ม โดยเฉพาะ YouTube ซึ่งเป็นคู่แข่งตรง ๆ
+    // ย้ายไปโพสต์เป็นคอมเมนต์แทน (คอมเมนต์ไม่โดนลด)
     const out = await facebook.postPhoto({
       photoPath: path.join(VIDEO_DIR, thumb),
       caption: cap.caption,
-      links,
     });
+
+    if (links.length) {
+      try {
+        await facebook.comment(out.remote_id,
+          links.map((l) => `${l.label}\n${l.url}`).join('\n\n'));
+      } catch {
+        // แปะลิงก์ไม่สำเร็จไม่ควรทำให้ทั้งงานล้ม — โพสต์ขึ้นแล้ว
+      }
+    }
     await pool.query(
       `UPDATE publish_jobs SET status='done', remote_id=?, remote_url=?,
               progress=100, ended_at=NOW() WHERE id=?`,
