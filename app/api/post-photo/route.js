@@ -25,6 +25,66 @@ const exists = async (p) => { try { await access(p); return true; } catch { retu
  *
  * body: { story_id, with_links?: true }
  */
+/**
+ * ดูตัวอย่างก่อนโพสต์ — คืนแคปชัน ปก และลิงก์ที่จะแนบ
+ * ใช้ตรรกะเดียวกับ POST เพื่อให้สิ่งที่เห็นตรงกับสิ่งที่จะโพสต์จริง
+ */
+export async function GET(req) {
+  const sid = Number(new URL(req.url).searchParams.get('story_id'));
+  if (!Number.isInteger(sid) || sid <= 0) {
+    return NextResponse.json({ error: 'story_id ไม่ถูกต้อง' }, { status: 400 });
+  }
+  const pool = getPool();
+
+  const [[story]] = await pool.query(
+    `SELECT id, title FROM stories WHERE id = ?`, [sid]);
+  if (!story) return NextResponse.json({ error: 'ไม่พบเรื่องนี้' }, { status: 404 });
+
+  const [[cap]] = await pool.query(
+    `SELECT caption, hook_style, used_at FROM story_captions
+     WHERE story_id = ? AND variant = 'photo'`, [sid]);
+
+  const { readdir } = await import('fs/promises');
+  let thumb = null;
+  try {
+    for (const f of await readdir(VIDEO_DIR)) {
+      if (f.startsWith(`${sid}_`) && f.toLowerCase().endsWith('.thumb.jpg')) { thumb = f; break; }
+    }
+  } catch {}
+
+  const [[dup]] = await pool.query(
+    `SELECT remote_url FROM publish_jobs
+     WHERE story_id = ? AND platform='facebook' AND layout='photo'
+       AND status IN ('uploading','processing','done') LIMIT 1`, [sid]);
+
+  const links = await pickLinks(pool, sid);
+
+  return NextResponse.json({
+    story_id: sid,
+    title: story.title,
+    caption: cap?.caption || null,
+    hook_style: cap?.hook_style || null,
+    thumb,
+    links,
+    posted_url: dup?.remote_url || null,
+    ready: !!(cap?.caption && thumb && !dup),
+  });
+}
+
+/** เลือกลิงก์คลิปเต็ม — Facebook มาก่อน YouTube (ดูเหตุผลใน POST) */
+async function pickLinks(pool, sid) {
+  const [rows] = await pool.query(
+    `SELECT platform, layout, remote_url FROM publish_jobs
+     WHERE story_id = ? AND status IN ('done','processing')
+       AND remote_url IS NOT NULL AND layout <> 'photo'
+     ORDER BY id DESC`, [sid]);
+  const fbFull = rows.find((r) => r.platform === 'facebook' && r.layout === 'landscape')
+              || rows.find((r) => r.platform === 'facebook' && r.layout === 'portrait');
+  if (fbFull) return [{ label: '▶ ดูนิทานฉบับเต็ม', url: fbFull.remote_url }];
+  const yt = rows.find((r) => r.platform === 'youtube');
+  return yt ? [{ label: '▶ ดูนิทานฉบับเต็มบน YouTube', url: yt.remote_url }] : [];
+}
+
 export async function POST(req) {
   let body;
   try { body = await req.json(); }
@@ -88,23 +148,7 @@ export async function POST(req) {
   //   2) คนดูไม่ต้องออกจากแอป Facebook → ดูจบมากกว่า
   //   3) ยอดวิวสะสมอยู่บนเพจเราเอง ช่วยให้ระบบดันคลิปถัดไป
   // ใช้ YouTube ต่อเมื่อยังไม่มีคลิปเต็มบน Facebook
-  const links = [];
-  if (body.with_links !== false) {
-    const [rows] = await pool.query(
-      `SELECT platform, layout, remote_url FROM publish_jobs
-       WHERE story_id = ? AND status IN ('done','processing')
-         AND remote_url IS NOT NULL AND layout <> 'photo'
-       ORDER BY id DESC`, [sid]);
-
-    const fbFull = rows.find((r) => r.platform === 'facebook' && r.layout === 'landscape')
-                || rows.find((r) => r.platform === 'facebook' && r.layout === 'portrait');
-    if (fbFull) {
-      links.push({ label: '▶ ดูนิทานฉบับเต็ม', url: fbFull.remote_url });
-    } else {
-      const yt = rows.find((r) => r.platform === 'youtube');
-      if (yt) links.push({ label: '▶ ดูนิทานฉบับเต็มบน YouTube', url: yt.remote_url });
-    }
-  }
+  const links = body.with_links === false ? [] : await pickLinks(pool, sid);
 
   const [ins] = await pool.query(
     `INSERT INTO publish_jobs (story_id, platform, layout, status, privacy, title, started_at)

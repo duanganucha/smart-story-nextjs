@@ -77,6 +77,7 @@ export default function PipelinePage() {
   const [pub, setPub] = useState({ platforms: [], done: {} });
   const [pubMsg, setPubMsg] = useState('');
   const [askPub, setAskPub] = useState(null);
+  const [askPhoto, setAskPhoto] = useState(null);   // ยืนยันก่อนโพสต์ภาพ
   const [toasts, pushToast, dismissToast] = useToasts();
   // เก็บสถานะงานอัปโหลดรอบก่อน — ใช้เทียบว่างานไหนเพิ่งเปลี่ยนเป็น done/error
   const [seenPub, setSeenPub] = useState(null);
@@ -174,6 +175,21 @@ export default function PipelinePage() {
       setCopied(what);
       setTimeout(() => setCopied(''), 1600);
     } catch {}
+  }
+
+  // เปิดไดอะล็อกยืนยัน — ดึงแคปชันจริงมาให้อ่านก่อนโพสต์
+  // โพสต์ขึ้นเพจสาธารณะทันทีและลบยาก จึงต้องเห็นของจริงก่อนกด
+  async function openPhotoDlg(c) {
+    setAskPhoto({ id: c.id, title: c.title, loading: true });
+    try {
+      const r = await fetch(`/api/post-photo?story_id=${c.id}`, { cache: 'no-store' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'ดูตัวอย่างไม่ได้');
+      setAskPhoto({ id: c.id, title: c.title, ...d, loading: false });
+    } catch (e) {
+      setAskPhoto(null);
+      pushToast({ kind: 'bad', title: 'เปิดตัวอย่างไม่ได้', msg: String(e.message || e) });
+    }
   }
 
   // โพสต์ภาพปก + แคปชันที่เขียนไว้ล่วงหน้า (คนละทางกับโพสต์วิดีโอ)
@@ -843,7 +859,7 @@ export default function PipelinePage() {
                           {c.thumb && (
                             <button className="abtn photo"
                                     title="โพสต์ภาพปก + แคปชันขึ้นเพจ Facebook (แนบลิงก์คลิปเต็มให้อัตโนมัติ)"
-                                    onClick={() => postPhoto(c.id, c.title)}>🖼 โพสต์</button>
+                                    onClick={() => openPhotoDlg(c)}>🖼 โพสต์</button>
                           )}
                           <button className="abtn info" title="ข้อมูลสำหรับอัปโหลด"
                                   onClick={() => openMeta(c.id)}>ℹ</button>
@@ -858,6 +874,67 @@ export default function PipelinePage() {
       )}
 
       <Toasts items={toasts} onDismiss={dismissToast} />
+
+      {askPhoto && (
+        <div className="modal-overlay" onClick={() => setAskPhoto(null)}>
+          <div className="cfbox wide" onClick={(e) => e.stopPropagation()}>
+            <div className="player-head">
+              <div className="t">🖼 โพสต์ภาพขึ้นเพจ Facebook</div>
+              <button className="refresh" onClick={() => setAskPhoto(null)}>✕</button>
+            </div>
+
+            <div className="cfstory">
+              <span className="cfid">#{askPhoto.id}</span> {askPhoto.title}
+            </div>
+
+            {askPhoto.loading ? (
+              <div className="hint" style={{ padding: '18px 0' }}>กำลังโหลดตัวอย่าง…</div>
+            ) : (
+              <>
+                {askPhoto.posted_url && (
+                  <div className="cfwarn">
+                    ⚠️ เรื่องนี้โพสต์ภาพไปแล้ว —{' '}
+                    <a href={askPhoto.posted_url} target="_blank" rel="noreferrer">ดูโพสต์เดิม</a>
+                  </div>
+                )}
+
+                <div className="phprev">
+                  {askPhoto.thumb ? (
+                    <img className="phimg"
+                         src={`/api/videos/${encodeURIComponent(askPhoto.thumb)}`} alt="" />
+                  ) : (
+                    <div className="phimg none">ยังไม่มีปก</div>
+                  )}
+                  <div className="phcap">{askPhoto.caption || '— ยังไม่มีแคปชัน —'}</div>
+                </div>
+
+                <div className="cfrow">
+                  <span className="cflab">ลิงก์แนบ</span>
+                  <span>
+                    {askPhoto.links?.length ? (
+                      <>
+                        {askPhoto.links[0].label}
+                        <div className="hint" style={{ marginTop: 2 }}>
+                          โพสต์เป็น<b>คอมเมนต์</b> ไม่ใส่ในแคปชัน — Facebook ลด
+                          การมองเห็นโพสต์ที่มีลิงก์ออกนอกแพลตฟอร์ม
+                        </div>
+                      </>
+                    ) : <span className="hint">ยังไม่มีคลิปที่อัปแล้ว — จะโพสต์เฉพาะภาพ</span>}
+                  </span>
+                </div>
+
+                <button className="cfgo" disabled={!askPhoto.ready}
+                        onClick={() => { const a = askPhoto; setAskPhoto(null);
+                                         postPhoto(a.id, a.title); }}>
+                  {askPhoto.ready ? 'โพสต์เลย'
+                    : !askPhoto.caption ? 'ยังไม่มีแคปชัน'
+                    : !askPhoto.thumb ? 'ยังไม่มีปก' : 'โพสต์ไปแล้ว'}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {askPub && (
         <div className="modal-overlay" onClick={() => setAskPub(null)}>
@@ -1954,6 +2031,31 @@ export default function PipelinePage() {
         .abtn.play.v-reel { border-color: rgba(236,72,153,.55);
           background: rgba(236,72,153,.16); color: #fbcfe8; font-weight: 600; }
         /* มีคลิปเต็มแล้วแต่ยังไม่ได้ตัดสั้น */
+        .cfbox.wide { max-width: 560px; }
+        .cfwarn {
+          background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.4);
+          border-radius: 8px; padding: 9px 12px; margin: 10px 0;
+          font-size: 13px; color: #fde68a;
+        }
+        .cfwarn a { color: #fcd34d; }
+        /* พรีวิวโพสต์ — วางเหมือนที่จะขึ้นจริงบนเพจ */
+        .phprev {
+          display: flex; gap: 12px; margin: 12px 0;
+          background: #0f172a; border: 1px solid #263449;
+          border-radius: 10px; padding: 12px;
+        }
+        .phimg {
+          width: 168px; height: 94px; object-fit: cover;
+          border-radius: 6px; flex: none; background: #1e293b;
+        }
+        .phimg.none {
+          display: flex; align-items: center; justify-content: center;
+          color: #64748b; font-size: 12px;
+        }
+        .phcap {
+          flex: 1; font-size: 12.5px; line-height: 1.6; color: #cbd5e1;
+          white-space: pre-wrap; max-height: 210px; overflow-y: auto;
+        }
         .abtn.photo { border-color: rgba(59,130,246,.45);
           background: rgba(59,130,246,.12); color: #bfdbfe; }
         .abtn.norl { border-style: dashed; border-color: rgba(236,72,153,.25);
