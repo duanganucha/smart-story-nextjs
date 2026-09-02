@@ -218,6 +218,27 @@ export async function POST(req) {
          WHERE id=?`,
         [out.pending ? 'processing' : 'done', out.remote_id, out.remote_url, jobId]
       );
+
+      // คลิปสั้นบน Facebook: แปะลิงก์คลิปเต็มไว้ในคอมเมนต์
+      // ใส่ในคอมเมนต์ไม่ใช่แคปชัน เพราะ Facebook ลด reach โพสต์ที่มี
+      // ลิงก์ออกนอกแพลตฟอร์มในตัวโพสต์ แต่ลิงก์ในคอมเมนต์ไม่โดนลด
+      if (platform === 'facebook' && files.is_reel && out.remote_id) {
+        try {
+          const [full] = await pool.query(
+            `SELECT platform, remote_url FROM publish_jobs
+             WHERE story_id = ? AND status IN ('done','processing')
+               AND remote_url IS NOT NULL AND layout <> 'photo' AND id <> ?
+             ORDER BY FIELD(platform,'youtube','facebook'), id DESC LIMIT 1`,
+            [sid, jobId]);
+          if (full.length) {
+            const where = full[0].platform === 'youtube' ? 'บน YouTube' : '';
+            await pub.comment(out.remote_id,
+              `🎬 ดูนิทานฉบับเต็ม${where ? ' ' + where : ''}ได้ที่นี่\n${full[0].remote_url}`);
+          }
+        } catch {
+          // แปะลิงก์ไม่สำเร็จไม่ควรทำให้ทั้งงานล้ม — คลิปขึ้นแล้ว
+        }
+      }
     } catch (e) {
       await pool.query(
         `UPDATE publish_jobs SET status='error', error=?, ended_at=NOW() WHERE id=?`,

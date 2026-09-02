@@ -176,6 +176,24 @@ export default function PipelinePage() {
     } catch {}
   }
 
+  // โพสต์ภาพปก + แคปชันที่เขียนไว้ล่วงหน้า (คนละทางกับโพสต์วิดีโอ)
+  async function postPhoto(storyId, title) {
+    try {
+      const r = await fetch('/api/post-photo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ story_id: storyId }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'โพสต์ไม่สำเร็จ');
+      pushToast({ kind: 'ok', title: 'โพสต์ภาพขึ้นเพจแล้ว',
+                  msg: `${title}${d.links ? ` · แนบลิงก์คลิปเต็ม ${d.links} รายการ` : ''}`,
+                  href: d.remote_url, ttl: 9000 });
+      load();
+    } catch (e) {
+      pushToast({ kind: 'bad', title: 'โพสต์ภาพไม่สำเร็จ', msg: String(e.message || e) });
+    }
+  }
+
   async function publishTo(storyId, platform, layout, publishAt) {
     setPubMsg('');
     try {
@@ -822,6 +840,11 @@ export default function PipelinePage() {
                                       })}>+ {label}</button>
                             );
                           })}
+                          {c.thumb && (
+                            <button className="abtn photo"
+                                    title="โพสต์ภาพปก + แคปชันขึ้นเพจ Facebook (แนบลิงก์คลิปเต็มให้อัตโนมัติ)"
+                                    onClick={() => postPhoto(c.id, c.title)}>🖼 โพสต์</button>
+                          )}
                           <button className="abtn info" title="ข้อมูลสำหรับอัปโหลด"
                                   onClick={() => openMeta(c.id)}>ℹ</button>
                       </div>
@@ -1931,6 +1954,8 @@ export default function PipelinePage() {
         .abtn.play.v-reel { border-color: rgba(236,72,153,.55);
           background: rgba(236,72,153,.16); color: #fbcfe8; font-weight: 600; }
         /* มีคลิปเต็มแล้วแต่ยังไม่ได้ตัดสั้น */
+        .abtn.photo { border-color: rgba(59,130,246,.45);
+          background: rgba(59,130,246,.12); color: #bfdbfe; }
         .abtn.norl { border-style: dashed; border-color: rgba(236,72,153,.25);
           color: #64748b; cursor: help; }
         .abtn.play:hover { filter: brightness(1.35); }
