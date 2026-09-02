@@ -27,3 +27,7 @@ dist.zip
 
 # ไฟล์สำรอง env ที่สร้างจากหน้าตั้งค่า (มีคีย์จริง)
 .env*.bak
+
+# bundle สำหรับ deploy เฉพาะโค้ด (สร้างใหม่ได้ด้วย deploy/build-code.sh)
+dist-code/
+dist-code.zip
