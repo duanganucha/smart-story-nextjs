@@ -45,6 +45,30 @@ export async function GET(req) {
     // ตารางยังไม่ถูกสร้าง — ไม่ถือเป็นข้อผิดพลาด
   }
 
+  // ── ตามสถานะงานที่ค้างอยู่ ──────────────────────────────────
+  // ตอนอัปเสร็จเราตั้ง 'processing' เพราะแพลตฟอร์มยังแปลงไฟล์ต่อ
+  // แต่ไม่มีใครกลับมาเช็คว่าแปลงเสร็จหรือยัง → ไอคอนหมุนค้างตลอดไป
+  // ทั้งที่คลิปขึ้นเพจเรียบร้อยแล้ว จึงเช็คตอนหน้าเว็บมาดึงข้อมูล
+  const stuck = jobs.filter((j) => j.status === 'processing' && j.remote_id);
+  if (stuck.length) {
+    await Promise.all(stuck.map(async (j) => {
+      try {
+        const pub = getPublisher(j.platform);
+        if (!pub?.status) return;
+        const st = await pub.status(j.remote_id);
+        if (st.status === 'done' || st.status === 'error') {
+          await pool.query(
+            `UPDATE publish_jobs SET status=?, error=?, ended_at=NOW() WHERE id=?`,
+            [st.status, st.error || null, j.id]);
+          j.status = st.status;
+          if (st.error) j.error = st.error;
+        }
+      } catch {
+        // เช็คไม่ได้ก็ปล่อยไว้ รอบหน้าค่อยลองใหม่
+      }
+    }));
+  }
+
   // สรุปว่าเรื่องไหนอัปสำเร็จไปที่ไหนแล้ว (story_id → { youtube:{...} })
   const done = {};
   for (const j of jobs) {
